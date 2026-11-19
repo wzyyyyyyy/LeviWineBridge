@@ -2,18 +2,12 @@
 #include <stdio.h>
 static HANDLE heap_locked;
 static LONG volatile heap_released;
-static int fx_wheel_count;
-static int fx_wheel_sum;
 static int fx_shift_up;
 static int fx_w_up;
 static int fx_cmd_v_ctrl;
 
 static LRESULT CALLBACK fx_wndproc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
-    case WM_MOUSEWHEEL:
-        ++fx_wheel_count;
-        fx_wheel_sum += (short)HIWORD(wParam);
-        return 0;
     case WM_KEYUP:
         if (wParam == VK_SHIFT) ++fx_shift_up;
         if (wParam == 'W') ++fx_w_up;
@@ -107,11 +101,6 @@ int main(void) {
                 if ((WNDPROC)GetWindowLongPtrW(hwnd, GWLP_WNDPROC) != fx_wndproc) break;
                 Sleep(100);
             }
-            /* Sub-notch trackpad deltas (40+40+40 => 1 step of 120) + immediate burst absorbed. */
-            SendMessageW(hwnd, WM_MOUSEWHEEL, MAKEWPARAM(0, 40), 0);
-            SendMessageW(hwnd, WM_MOUSEWHEEL, MAKEWPARAM(0, 40), 0);
-            SendMessageW(hwnd, WM_MOUSEWHEEL, MAKEWPARAM(0, 40), 0);
-            SendMessageW(hwnd, WM_MOUSEWHEEL, MAKEWPARAM(0, 120), 0);
             /* Stuck Shift + W released on WM_KILLFOCUS. */
             SendMessageW(hwnd, WM_KEYDOWN, VK_SHIFT, 0);
             SendMessageW(hwnd, WM_KEYDOWN, 'W', 0);
@@ -122,7 +111,7 @@ int main(void) {
             SendMessageW(hwnd, WM_KEYUP, 'V', 0);
             SendMessageW(hwnd, WM_KEYUP, VK_LWIN, 0);
             DestroyWindow(hwnd);
-            input_ok = (fx_wheel_count == 1 && fx_wheel_sum == 120 && fx_shift_up == 1 && fx_w_up == 1 && fx_cmd_v_ctrl == 1) ? 1 : 0;
+            input_ok = (fx_shift_up == 1 && fx_w_up == 1 && fx_cmd_v_ctrl == 1) ? 1 : 0;
         } else {
             input_ok = 0;
         }

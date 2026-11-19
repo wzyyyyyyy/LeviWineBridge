@@ -128,7 +128,7 @@ try:
     report['console'] = {'passed': True, 'output': text}
     print('console: passed', flush=True)
 
-    # Wine input fix test (scroll debounce, stuck-key release on focus loss, Cmd+V -> Ctrl+V)
+    # Wine input fix test (stuck-key release on focus loss, Cmd+V -> Ctrl+V)
     result = output/'result.txt'
     result.unlink(missing_ok=True)
     env = {k: v for k, v in os.environ.items() if not k.startswith(('WINE', 'DYLD_')) and k not in ('LEVI_GAME_AUTH_URL', 'LEVI_GAME_AUTH_TOKEN', 'LEVI_CONSOLE_ADDR', 'LEVI_CONSOLE_TOKEN', 'LEVI_WINE_INPUT_FIX')}

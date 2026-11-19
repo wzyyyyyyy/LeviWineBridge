@@ -2,45 +2,9 @@
 #ifndef LEVI_WINE_BRIDGE_INPUT_FIX_H
 #define LEVI_WINE_BRIDGE_INPUT_FIX_H
 
-#ifndef WHEEL_DELTA
-#define WHEEL_DELTA 120
-#endif
-
 #ifndef MAPVK_VK_TO_VSC
 #define MAPVK_VK_TO_VSC 0
 #endif
-
-typedef struct {
-    int accum;
-    ULONGLONG last_event_ms;
-    ULONGLONG last_step_ms;
-} LeviWheelState;
-
-/* Quantize high-frequency trackpad/Magic Mouse scroll deltas into discrete
- * WHEEL_DELTA steps while preserving zero-latency discrete scroll wheels.
- */
-static short levi_wheel_filter(LeviWheelState *st, int delta, ULONGLONG now_ms) {
-    if (!st || delta == 0) return 0;
-    if (st->last_event_ms == 0 ||
-        now_ms - st->last_event_ms > 250 ||
-        (st->accum > 0 && delta < 0) ||
-        (st->accum < 0 && delta > 0)) {
-        st->accum = 0;
-    }
-    st->last_event_ms = now_ms;
-    st->accum += delta;
-    if (st->accum > -WHEEL_DELTA && st->accum < WHEEL_DELTA) {
-        return 0;
-    }
-    if (st->last_step_ms != 0 && now_ms - st->last_step_ms < 55) {
-        st->accum = st->accum > 0 ? (WHEEL_DELTA - 1) : -(WHEEL_DELTA - 1);
-        return 0;
-    }
-    short step = st->accum > 0 ? WHEEL_DELTA : -WHEEL_DELTA;
-    st->accum = 0;
-    st->last_step_ms = now_ms;
-    return step;
-}
 
 /* Drop anomalous single-packet mouse jumps right after regaining focus. */
 static int levi_raw_mouse_is_spike(LONG dx, LONG dy, USHORT flags, ULONGLONG now_ms, ULONGLONG guard_until_ms) {
@@ -51,13 +15,14 @@ static int levi_raw_mouse_is_spike(LONG dx, LONG dy, USHORT flags, ULONGLONG now
 
 #ifndef LEVI_INPUT_FIX_PURE_TEST
 
+typedef UINT (WINAPI *GetRawInputDataFn)(HRAWINPUT, UINT, LPVOID, PUINT, UINT);
+
 static HWND volatile input_hwnd;
 static WNDPROC volatile input_orig_wndproc;
-static LeviWheelState input_wheel_state;
-static ULONGLONG input_focus_guard_until_ms;
+static ULONGLONG volatile input_focus_guard_until_ms;
 static DWORD input_held_mask;
-static int input_wheel_enabled = 1;
 static int input_cmd_shortcut_down;
+static GetRawInputDataFn real_get_raw_input_data;
 
 static const UINT input_tracked_vks[] = {
     VK_SHIFT, VK_LSHIFT, VK_RSHIFT,
@@ -83,7 +48,6 @@ static void input_release_stuck_keys(HWND hwnd, WNDPROC orig) {
     DWORD mask = input_held_mask;
     input_held_mask = 0;
     input_cmd_shortcut_down = 0;
-    input_wheel_state.accum = 0;
     if (!mask || !orig) return;
     for (size_t i = 0; i < sizeof input_tracked_vks / sizeof input_tracked_vks[0]; ++i) {
         if (mask & (1u << i)) {
@@ -95,6 +59,25 @@ static void input_release_stuck_keys(HWND hwnd, WNDPROC orig) {
 
 static int input_is_clipboard_vk(UINT vk) {
     return vk == 'C' || vk == 'V' || vk == 'X' || vk == 'A';
+}
+
+static UINT WINAPI bridge_get_raw_input_data(HRAWINPUT hRawInput, UINT uiCommand,
+                                             LPVOID pData, PUINT pcbSize, UINT cbSizeHeader) {
+    if (!real_get_raw_input_data) return (UINT)-1;
+    UINT ret = real_get_raw_input_data(hRawInput, uiCommand, pData, pcbSize, cbSizeHeader);
+    if (ret == (UINT)-1 || uiCommand != RID_INPUT || !pData ||
+        ret < sizeof(RAWINPUTHEADER) + sizeof(RAWMOUSE)) {
+        return ret;
+    }
+    RAWINPUT *raw = (RAWINPUT *)pData;
+    if (raw->header.dwType == RIM_TYPEMOUSE &&
+        levi_raw_mouse_is_spike(raw->data.mouse.lLastX, raw->data.mouse.lLastY,
+                                raw->data.mouse.usFlags, GetTickCount64(),
+                                input_focus_guard_until_ms)) {
+        raw->data.mouse.lLastX = 0;
+        raw->data.mouse.lLastY = 0;
+    }
+    return ret;
 }
 
 static LRESULT CALLBACK input_wndproc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
@@ -163,24 +146,18 @@ static LRESULT CALLBACK input_wndproc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
         break;
     }
 
-    case WM_MOUSEWHEEL:
-        if (input_wheel_enabled) {
-            short step = levi_wheel_filter(&input_wheel_state, (short)HIWORD(wParam), GetTickCount64());
-            if (step == 0) return 0;
-            wParam = MAKEWPARAM(LOWORD(wParam), (WORD)step);
-        }
-        break;
-
     case WM_INPUT: {
-        ULONGLONG now = GetTickCount64();
-        if (now <= input_focus_guard_until_ms) {
-            RAWINPUT raw;
-            UINT size = sizeof raw;
-            if (GetRawInputData((HRAWINPUT)lParam, RID_INPUT, &raw, &size, sizeof(RAWINPUTHEADER)) != (UINT)-1 &&
-                raw.header.dwType == RIM_TYPEMOUSE &&
-                levi_raw_mouse_is_spike(raw.data.mouse.lLastX, raw.data.mouse.lLastY,
-                                        raw.data.mouse.usFlags, now, input_focus_guard_until_ms)) {
-                return DefWindowProcW(hwnd, msg, wParam, lParam);
+        if (!real_get_raw_input_data) {
+            ULONGLONG now = GetTickCount64();
+            if (now <= input_focus_guard_until_ms) {
+                RAWINPUT raw;
+                UINT size = sizeof raw;
+                if (GetRawInputData((HRAWINPUT)lParam, RID_INPUT, &raw, &size, sizeof(RAWINPUTHEADER)) != (UINT)-1 &&
+                    raw.header.dwType == RIM_TYPEMOUSE &&
+                    levi_raw_mouse_is_spike(raw.data.mouse.lLastX, raw.data.mouse.lLastY,
+                                            raw.data.mouse.usFlags, now, input_focus_guard_until_ms)) {
+                    return DefWindowProcW(hwnd, msg, wParam, lParam);
+                }
             }
         }
         break;
@@ -191,6 +168,48 @@ static LRESULT CALLBACK input_wndproc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
     }
 
     return CallWindowProcW(orig, hwnd, msg, wParam, lParam);
+}
+
+static void input_patch_exe_iat(void) {
+    HMODULE exe = GetModuleHandleW(NULL);
+    HMODULE user32 = GetModuleHandleW(L"user32.dll");
+    if (!exe || !user32) return;
+
+    if (!real_get_raw_input_data) {
+        real_get_raw_input_data = (GetRawInputDataFn)(void *)GetProcAddress(user32, "GetRawInputData");
+    }
+    if (!real_get_raw_input_data) return;
+
+    BYTE *base = (BYTE *)exe;
+    IMAGE_DOS_HEADER *dos = (IMAGE_DOS_HEADER *)base;
+    if (dos->e_magic != IMAGE_DOS_SIGNATURE) return;
+    IMAGE_NT_HEADERS64 *nt = (IMAGE_NT_HEADERS64 *)(base + dos->e_lfanew);
+    if (nt->Signature != IMAGE_NT_SIGNATURE || nt->FileHeader.Machine != IMAGE_FILE_MACHINE_AMD64) return;
+    DWORD rva = nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress;
+    if (!rva) return;
+
+    HMODULE pinned = NULL;
+    if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_PIN,
+                            (LPCWSTR)&bridge_get_raw_input_data, &pinned)) {
+        return;
+    }
+
+    for (IMAGE_IMPORT_DESCRIPTOR *desc = (IMAGE_IMPORT_DESCRIPTOR *)(base + rva); desc->Name; ++desc) {
+        if (!desc->OriginalFirstThunk || !desc->FirstThunk) continue;
+        IMAGE_THUNK_DATA64 *lookup = (IMAGE_THUNK_DATA64 *)(base + desc->OriginalFirstThunk);
+        IMAGE_THUNK_DATA64 *iat = (IMAGE_THUNK_DATA64 *)(base + desc->FirstThunk);
+        for (; lookup->u1.AddressOfData; ++lookup, ++iat) {
+            if (IMAGE_SNAP_BY_ORDINAL64(lookup->u1.Ordinal)) continue;
+            IMAGE_IMPORT_BY_NAME *imp = (IMAGE_IMPORT_BY_NAME *)(base + lookup->u1.AddressOfData);
+            if (strcmp((const char *)imp->Name, "GetRawInputData") != 0) continue;
+            if ((PVOID)(ULONG_PTR)iat->u1.Function == (PVOID)&bridge_get_raw_input_data) return;
+            DWORD protection;
+            if (!VirtualProtect(&iat->u1.Function, sizeof(void *), PAGE_READWRITE, &protection)) return;
+            InterlockedExchangePointer((PVOID volatile *)&iat->u1.Function, (PVOID)&bridge_get_raw_input_data);
+            VirtualProtect(&iat->u1.Function, sizeof(void *), protection, &protection);
+            return;
+        }
+    }
 }
 
 typedef struct {
@@ -254,6 +273,7 @@ static void input_try_subclass(void) {
 
 static DWORD WINAPI input_fix_thread(void *unused) {
     (void)unused;
+    input_patch_exe_iat();
     for (int i = 0; i < 300; ++i) {
         input_try_subclass();
         Sleep(200);
@@ -276,11 +296,6 @@ static int start_input_fix(void) {
                  GetEnvironmentVariableA("LEVI_GAME_AUTH_TOKEN", tmp, sizeof tmp) > 0 ||
                  GetEnvironmentVariableA("LEVI_CONSOLE_TOKEN", tmp, sizeof tmp) > 0;
     if (!active) return 0;
-
-    n = GetEnvironmentVariableA("LEVI_WINE_WHEEL_FIX", flag, sizeof flag);
-    if (n > 0 && n < sizeof flag && !strcmp(flag, "0")) {
-        input_wheel_enabled = 0;
-    }
 
     HANDLE thread = CreateThread(NULL, 0, input_fix_thread, NULL, 0, NULL);
     if (!thread) return 0;
