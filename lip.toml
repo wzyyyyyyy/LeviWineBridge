@@ -1,0 +1,21 @@
+format = 4
+id = "github.com/wzyyyyyyy/LeviWineBridge"
+version = "0.1.0"
+
+[info]
+name = "LeviWineBridge"
+logo = "https://raw.githubusercontent.com/wzyyyyyyy/LeviWineBridge/v0.1.0/icon.png"
+description = "LeviLamina client plugin that bridges Xbox sign-in, interactive native console I/O, and Wine compatibility fixes for Minecraft Bedrock."
+tags = ["utility", "bugfix"]
+
+[[variants.""]]
+side = "client"
+platform = "win-x64"
+
+[variants."".deps]
+"github.com/LiteLDev/LeviLamina" = "26.60.8"
+
+[[variants."".assets]]
+type = "zip"
+urls = ["https://{{id}}/releases/download/v{{version}}/LeviWineBridge-client-windows-x64.zip"]
+place = [{ src = "LeviClient/", dest = "mods/LeviClient/" }]

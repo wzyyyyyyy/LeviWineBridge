@@ -1,0 +1,7 @@
+{
+  "name": "LeviWineBridge",
+  "entry": "LeviWineBridge.dll",
+  "type": "preload-native",
+  "author": "wzyyyyyyy",
+  "version": "0.1.0"
+}
