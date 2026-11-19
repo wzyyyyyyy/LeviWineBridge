@@ -8,7 +8,7 @@
 
 ## 安装
 
-lip 包 ID 为 `github.com/wzyyyyyyy/LeviWineBridge`（原名 `XboxSignInFix`），适用于 `client` / `win-x64` 工作区，依赖 LeviLamina 26.60.8 的客户端版本。通过 LeviLauncher 的模组目录安装时，包管理器会自动解析该依赖。安装位置沿用 `mods/LeviClient/`，与早期版本共用该目录。
+lip 包 ID 为 `github.com/wzyyyyyyy/LeviWineBridge`，适用于 `client` / `win-x64` ，依赖 LeviLamina 26.60.8 的客户端版本。通过 LeviLauncher 的模组目录安装时，包管理器会自动解析该依赖。安装位置沿用 `mods/LeviClient/`，与早期版本共用该目录。
 
 手动导入时，先在目标实例安装 LeviLamina 26.60.8 的客户端版本，再从 [GitHub Releases](https://github.com/wzyyyyyyy/LeviWineBridge/releases) 下载 `LeviWineBridge-client-windows-x64.zip`，通过 LeviLauncher 的「管理模组」导入。
 
