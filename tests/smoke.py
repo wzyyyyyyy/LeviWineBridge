@@ -127,6 +127,20 @@ try:
     assert '\x1b[0;92m' in text and '你好-W\n' in text and 'printf-ok\n' in text and 'echo:cmd2\n' in text, repr(text)
     report['console'] = {'passed': True, 'output': text}
     print('console: passed', flush=True)
+
+    # Wine input fix test (scroll debounce, stuck-key release on focus loss, Cmd+V -> Ctrl+V)
+    result = output/'result.txt'
+    result.unlink(missing_ok=True)
+    env = {k: v for k, v in os.environ.items() if not k.startswith(('WINE', 'DYLD_')) and k not in ('LEVI_GAME_AUTH_URL', 'LEVI_GAME_AUTH_TOKEN', 'LEVI_CONSOLE_ADDR', 'LEVI_CONSOLE_TOKEN', 'LEVI_WINE_INPUT_FIX')}
+    env.update(LEVI_WINE_INPUT_FIX='1')
+    subprocess.run([str(args.launcher), str(output/'fixture.exe')], cwd=output, env=env, timeout=30, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+    deadline = time.monotonic() + 30
+    while not result.exists() and time.monotonic() < deadline:
+        time.sleep(0.1)
+    actual = result.read_text().strip()
+    assert actual == 'prompt=2 other=2 guard=-1 input=1', actual
+    report['input'] = {'passed': True}
+    print('input: passed', flush=True)
 finally:
     server.shutdown()
 (output/'report.json').write_text(json.dumps(report, indent=2)+'\n')

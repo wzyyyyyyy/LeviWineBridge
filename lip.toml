@@ -1,11 +1,11 @@
 format = 4
 id = "github.com/wzyyyyyyy/LeviWineBridge"
-version = "0.1.0"
+version = "0.1.1"
 
 [info]
 name = "LeviWineBridge"
-logo = "https://raw.githubusercontent.com/wzyyyyyyy/LeviWineBridge/v0.1.0/icon.png"
-description = "LeviLamina client plugin that bridges Xbox sign-in, interactive native console I/O, and Wine compatibility fixes for Minecraft Bedrock."
+logo = "https://raw.githubusercontent.com/wzyyyyyyy/LeviWineBridge/v0.1.1/icon.png"
+description = "LeviLamina client plugin that bridges Xbox sign-in, interactive native console I/O, and Wine input/PreLoader fixes for Minecraft Bedrock."
 tags = ["utility", "bugfix"]
 
 [[variants.""]]

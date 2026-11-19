@@ -2,6 +2,29 @@
 #include <stdio.h>
 static HANDLE heap_locked;
 static LONG volatile heap_released;
+static int fx_wheel_count;
+static int fx_wheel_sum;
+static int fx_shift_up;
+static int fx_w_up;
+static int fx_cmd_v_ctrl;
+
+static LRESULT CALLBACK fx_wndproc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    switch (msg) {
+    case WM_MOUSEWHEEL:
+        ++fx_wheel_count;
+        fx_wheel_sum += (short)HIWORD(wParam);
+        return 0;
+    case WM_KEYUP:
+        if (wParam == VK_SHIFT) ++fx_shift_up;
+        if (wParam == 'W') ++fx_w_up;
+        return 0;
+    case WM_KEYDOWN:
+        if (wParam == 'V' && (GetKeyState(VK_CONTROL) & 0x8000)) fx_cmd_v_ctrl = 1;
+        return 0;
+    default:
+        return DefWindowProcW(hwnd, msg, wParam, lParam);
+    }
+}
 static DWORD WINAPI hold_heap(void *unused) {
     (void)unused;
     HeapLock(GetProcessHeap());
@@ -67,10 +90,49 @@ int main(void) {
         Sleep(200);
         console_ok = (vt_ok && type_ok && w_ok && rw_ok && fg_ok) ? 1 : 0;
     }
+    int input_ok = -1;
+    if (GetEnvironmentVariableA("LEVI_WINE_INPUT_FIX", environment, sizeof environment) && environment[0] == '1') {
+        WNDCLASSW wc = {0};
+        wc.lpfnWndProc = fx_wndproc;
+        wc.hInstance = GetModuleHandleW(NULL);
+        wc.lpszClassName = L"LeviInputFixtureWindow";
+        RegisterClassW(&wc);
+        HWND hwnd = CreateWindowExW(0, wc.lpszClassName, L"Fixture", WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+                                    100, 100, 400, 300, NULL, NULL, wc.hInstance, NULL);
+        if (hwnd) {
+            ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+            UpdateWindow(hwnd);
+            /* Wait for LeviWineBridge's input watcher to subclass this window. */
+            for (int i = 0; i < 20; ++i) {
+                if ((WNDPROC)GetWindowLongPtrW(hwnd, GWLP_WNDPROC) != fx_wndproc) break;
+                Sleep(100);
+            }
+            /* Sub-notch trackpad deltas (40+40+40 => 1 step of 120) + immediate burst absorbed. */
+            SendMessageW(hwnd, WM_MOUSEWHEEL, MAKEWPARAM(0, 40), 0);
+            SendMessageW(hwnd, WM_MOUSEWHEEL, MAKEWPARAM(0, 40), 0);
+            SendMessageW(hwnd, WM_MOUSEWHEEL, MAKEWPARAM(0, 40), 0);
+            SendMessageW(hwnd, WM_MOUSEWHEEL, MAKEWPARAM(0, 120), 0);
+            /* Stuck Shift + W released on WM_KILLFOCUS. */
+            SendMessageW(hwnd, WM_KEYDOWN, VK_SHIFT, 0);
+            SendMessageW(hwnd, WM_KEYDOWN, 'W', 0);
+            SendMessageW(hwnd, WM_KILLFOCUS, 0, 0);
+            /* Cmd+V translated to Ctrl+V. */
+            SendMessageW(hwnd, WM_KEYDOWN, VK_LWIN, 0);
+            SendMessageW(hwnd, WM_KEYDOWN, 'V', 0);
+            SendMessageW(hwnd, WM_KEYUP, 'V', 0);
+            SendMessageW(hwnd, WM_KEYUP, VK_LWIN, 0);
+            DestroyWindow(hwnd);
+            input_ok = (fx_wheel_count == 1 && fx_wheel_sum == 120 && fx_shift_up == 1 && fx_w_up == 1 && fx_cmd_v_ctrl == 1) ? 1 : 0;
+        } else {
+            input_ok = 0;
+        }
+    }
     strcpy(name + 1, "result.txt");
-    int length = console_ok >= 0
-        ? snprintf(body, sizeof body, "prompt=%d other=%d guard=%d console=%d\n", prompt, other, guard, console_ok)
-        : snprintf(body, sizeof body, "prompt=%d other=%d guard=%d\n", prompt, other, guard);
+    int length = input_ok >= 0
+        ? snprintf(body, sizeof body, "prompt=%d other=%d guard=%d input=%d\n", prompt, other, guard, input_ok)
+        : (console_ok >= 0
+            ? snprintf(body, sizeof body, "prompt=%d other=%d guard=%d console=%d\n", prompt, other, guard, console_ok)
+            : snprintf(body, sizeof body, "prompt=%d other=%d guard=%d\n", prompt, other, guard));
     HANDLE output = CreateFileA(path, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     if (output == INVALID_HANDLE_VALUE) return 2;
     DWORD written;
