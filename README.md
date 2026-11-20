@@ -10,9 +10,9 @@
 
 ## 安装
 
-lip 包 ID 为 `github.com/wzyyyyyyy/LeviWineBridge`，适用于 `client` / `win-x64` ，依赖 LeviLamina 26.60.8 的客户端版本。通过 LeviLauncher 的模组目录安装时，包管理器会自动解析该依赖。
+lip 包 ID 为 `github.com/wzyyyyyyy/LeviWineBridge`，适用于 `client` / `win-x64`，兼容全版本 Minecraft 与 LeviLamina（`>=0.0.0`）。通过 LeviLauncher 的模组目录安装时，包管理器会自动解析该依赖。
 
-手动导入时，先在目标实例安装 LeviLamina 26.60.8 的客户端版本，再从 [GitHub Releases](https://github.com/wzyyyyyyy/LeviWineBridge/releases) 下载 `LeviWineBridge-client-windows-x64.zip`，通过 LeviLauncher 的「管理模组」导入。
+手动导入时，先在目标实例安装对应版本的 LeviLamina 客户端，再从 [GitHub Releases](https://github.com/wzyyyyyyy/LeviWineBridge/releases) 下载 `LeviWineBridge-client-windows-x64.zip`，通过 LeviLauncher 的「管理模组」导入。
 
 ## 构建
 
