@@ -11,6 +11,7 @@
 #include "heap_guard.h"
 #include "console_bridge.h"
 #include "input_fix.h"
+#include "font_fix.h"
 
 typedef int (WINAPI *MessageBoxFn)(HWND, LPCWSTR, LPCWSTR, UINT);
 static MessageBoxFn original_message_box;
@@ -152,6 +153,7 @@ BOOL WINAPI DllMain(HINSTANCE module, DWORD reason, LPVOID reserved) {
     DisableThreadLibraryCalls(module);
     (void)start_console_bridge(module);
     (void)start_input_fix();
+    (void)start_font_fix();
     DWORD a = GetEnvironmentVariableA("LEVI_GAME_AUTH_URL", endpoint, sizeof endpoint);
     DWORD b = GetEnvironmentVariableA("LEVI_GAME_AUTH_TOKEN", token, sizeof token);
     /* Inert on ordinary Windows launches, or when no launcher bridge exists. */

@@ -4,12 +4,13 @@
 
 - **Xbox 登录桥接**：游戏生成设备码后，插件通过本机回环把提示和登录结果交给兼容的原生启动器，由启动器打开微软验证页并显示登录进度；启动器不可用时，游戏继续显示原登录提示。身份验证与凭据存储仍由游戏的 XGameRuntime 处理。
 - **原生终端控制台桥接**：启用实例控制台时，插件在进程内接管标准流与 Win32 Console API（支持 ANSI 色彩、UTF-8 中文输出与交互输入），通过本机回环桥接到宿主默认终端应用（如 Ghostty、iTerm2、Terminal.app 等）。
-- **Wine 输入体验修复**：仅在 Wine 下激活（原生 Windows 静默），包含重获焦点首帧防视角甩头、切窗自动释放粘连修饰/移动键，以及游戏内 `Cmd+C/V/X/A` 快捷键映射。
+- **Wine 输入体验修复**：仅在 Wine 下激活，包含重获焦点首帧防视角甩头、切窗自动释放粘连修饰/移动键，以及游戏内 `Cmd+C/V/X/A` 快捷键映射。
+- **Arke 中文字体修复**：在 Wine 下若 `C:\Windows\Fonts\msyh.ttc` 缺失，自动从 macOS 系统自带字体（优先 `Hiragino Sans GB.ttc`）复制到容器字体目录，修复 Arke 等模组中文显示为 `?` 的问题。
 - **PreLoader 97% 堆锁兼容修复**：与 PreLoader 一起在 Wine 中运行时，避免挂起持有进程堆锁的线程导致的启动卡死。
 
 ## 安装
 
-lip 包 ID 为 `github.com/wzyyyyyyy/LeviWineBridge`，适用于 `client` / `win-x64` ，依赖 LeviLamina 26.60.8 的客户端版本。通过 LeviLauncher 的模组目录安装时，包管理器会自动解析该依赖。安装位置沿用 `mods/LeviClient/`，与早期版本共用该目录。
+lip 包 ID 为 `github.com/wzyyyyyyy/LeviWineBridge`，适用于 `client` / `win-x64` ，依赖 LeviLamina 26.60.8 的客户端版本。通过 LeviLauncher 的模组目录安装时，包管理器会自动解析该依赖。
 
 手动导入时，先在目标实例安装 LeviLamina 26.60.8 的客户端版本，再从 [GitHub Releases](https://github.com/wzyyyyyyy/LeviWineBridge/releases) 下载 `LeviWineBridge-client-windows-x64.zip`，通过 LeviLauncher 的「管理模组」导入。
 
@@ -23,7 +24,7 @@ python3 build.py
 MINGW_CC='zig cc -target x86_64-windows-gnu' python3 build.py
 ```
 
-构建产物为 `dist/LeviWineBridge.dll`。LeviLauncher 启动游戏时会按需提供以下本机回环环境变量（未配置时插件保持静默，普通 Windows 启动无副作用）：
+构建产物为 `dist/LeviWineBridge.dll`。LeviLauncher 启动游戏时会按需提供以下本机回环环境变量：
 
 - 登录桥：`LEVI_GAME_AUTH_URL`、`LEVI_GAME_AUTH_TOKEN`
 - 控制台桥：`LEVI_CONSOLE_ADDR`、`LEVI_CONSOLE_TOKEN`
