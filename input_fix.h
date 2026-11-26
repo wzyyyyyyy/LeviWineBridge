@@ -84,11 +84,14 @@ static LRESULT CALLBACK input_wndproc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
     WNDPROC orig = (WNDPROC)InterlockedCompareExchangePointer((PVOID volatile *)&input_orig_wndproc, NULL, NULL);
     if (!orig) return DefWindowProcW(hwnd, msg, wParam, lParam);
 
+    (void)render_scale_adjust_message(hwnd, msg, &lParam);
+
     switch (msg) {
     case WM_NCDESTROY:
         input_held_mask = 0;
         input_cmd_shortcut_down = 0;
         InterlockedCompareExchangePointer((PVOID volatile *)&input_hwnd, NULL, (PVOID)hwnd);
+        InterlockedCompareExchangePointer((PVOID volatile *)&g_scale_hwnd, NULL, (PVOID)hwnd);
         break;
 
     case WM_SETFOCUS:
@@ -238,6 +241,33 @@ static BOOL CALLBACK input_enum_windows(HWND hwnd, LPARAM lParam) {
     return TRUE;
 }
 
+static void input_try_subclass_hwnd(HWND target) {
+    if (!target || !IsWindow(target)) return;
+    HWND current = (HWND)InterlockedCompareExchangePointer((PVOID volatile *)&input_hwnd, NULL, NULL);
+    if (current == target && IsWindow(current)) return;
+
+    WNDPROC existing = (WNDPROC)GetWindowLongPtrW(target, GWLP_WNDPROC);
+    if (!existing || existing == input_wndproc) return;
+
+    HMODULE pinned = NULL;
+    if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_PIN,
+                            (LPCWSTR)&input_wndproc, &pinned)) {
+        return;
+    }
+
+    InterlockedExchangePointer((PVOID volatile *)&input_orig_wndproc, (PVOID)existing);
+    WNDPROC prev = (WNDPROC)SetWindowLongPtrW(target, GWLP_WNDPROC, (LONG_PTR)&input_wndproc);
+    if (!prev) {
+        InterlockedExchangePointer((PVOID volatile *)&input_orig_wndproc, NULL);
+        return;
+    }
+    if (prev != existing) {
+        InterlockedExchangePointer((PVOID volatile *)&input_orig_wndproc, (PVOID)prev);
+    }
+    InterlockedExchangePointer((PVOID volatile *)&input_hwnd, (PVOID)target);
+    OutputDebugStringA("LeviWineBridge: Wine input fix ready\n");
+}
+
 static void input_try_subclass(void) {
     HWND current = (HWND)InterlockedCompareExchangePointer((PVOID volatile *)&input_hwnd, NULL, NULL);
     if (current && IsWindow(current)) return;
@@ -248,27 +278,7 @@ static void input_try_subclass(void) {
     search.best_area = 0;
     EnumWindows(input_enum_windows, (LPARAM)&search);
     if (!search.found) return;
-
-    WNDPROC existing = (WNDPROC)GetWindowLongPtrW(search.found, GWLP_WNDPROC);
-    if (!existing || existing == input_wndproc) return;
-
-    HMODULE pinned = NULL;
-    if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_PIN,
-                            (LPCWSTR)&input_wndproc, &pinned)) {
-        return;
-    }
-
-    InterlockedExchangePointer((PVOID volatile *)&input_orig_wndproc, (PVOID)existing);
-    WNDPROC prev = (WNDPROC)SetWindowLongPtrW(search.found, GWLP_WNDPROC, (LONG_PTR)&input_wndproc);
-    if (!prev) {
-        InterlockedExchangePointer((PVOID volatile *)&input_orig_wndproc, NULL);
-        return;
-    }
-    if (prev != existing) {
-        InterlockedExchangePointer((PVOID volatile *)&input_orig_wndproc, (PVOID)prev);
-    }
-    InterlockedExchangePointer((PVOID volatile *)&input_hwnd, (PVOID)search.found);
-    OutputDebugStringA("LeviWineBridge: Wine input fix ready\n");
+    input_try_subclass_hwnd(search.found);
 }
 
 static DWORD WINAPI input_fix_thread(void *unused) {
@@ -288,11 +298,12 @@ static int start_input_fix(void) {
 
     char flag[16];
     DWORD n = GetEnvironmentVariableA("LEVI_WINE_INPUT_FIX", flag, sizeof flag);
-    if (n > 0 && n < sizeof flag && !strcmp(flag, "0")) return 0;
+    if (n > 0 && n < sizeof flag && !strcmp(flag, "0") && !render_scale_is_active()) return 0;
 
-    /* Activate when explicitly requested or when launched with any LeviLauncher bridge. */
+    /* Activate when explicitly requested, when render scaling is active, or when launched with any LeviLauncher bridge. */
     char tmp[8];
-    int active = (n > 0 && n < sizeof flag) ||
+    int active = render_scale_is_active() ||
+                 (n > 0 && n < sizeof flag) ||
                  GetEnvironmentVariableA("LEVI_GAME_AUTH_TOKEN", tmp, sizeof tmp) > 0 ||
                  GetEnvironmentVariableA("LEVI_CONSOLE_TOKEN", tmp, sizeof tmp) > 0;
     if (!active) return 0;

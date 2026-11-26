@@ -10,6 +10,7 @@
 #include "protocol.h"
 #include "heap_guard.h"
 #include "console_bridge.h"
+#include "render_scale.h"
 #include "input_fix.h"
 #include "font_fix.h"
 
@@ -152,6 +153,7 @@ BOOL WINAPI DllMain(HINSTANCE module, DWORD reason, LPVOID reserved) {
     if (reason != DLL_PROCESS_ATTACH) return TRUE;
     DisableThreadLibraryCalls(module);
     (void)start_console_bridge(module);
+    (void)start_render_scale();
     (void)start_input_fix();
     (void)start_font_fix();
     DWORD a = GetEnvironmentVariableA("LEVI_GAME_AUTH_URL", endpoint, sizeof endpoint);
