@@ -1,39 +1,43 @@
 # LeviWineBridge
 
-这是一个面向 Wine 中 Minecraft 基岩版的 LeviLamina 客户端配套插件，用于在原生宿主（如 macOS 上的 LeviLauncher）与 Wine 游戏进程之间提供系统桥接和兼容性修复：
+English | [简体中文](README.zh.md)
 
-- **Xbox 登录桥接**：游戏生成设备码后，插件通过本机回环把提示和登录结果交给兼容的原生启动器，由启动器打开微软验证页并显示登录进度；启动器不可用时，游戏继续显示原登录提示。身份验证与凭据存储仍由游戏的 XGameRuntime 处理。
-- **原生终端控制台桥接**：启用实例控制台时，插件在进程内接管标准流与 Win32 Console API（支持 ANSI 色彩、UTF-8 中文输出与交互输入），通过本机回环桥接到宿主默认终端应用（如 Ghostty、iTerm2、Terminal.app 等）。
-- **Wine 输入体验修复**：仅在 Wine 下激活，包含重获焦点首帧防视角甩头、切窗自动释放粘连修饰/移动键，以及游戏内 `Cmd+C/V/X/A` 快捷键映射。
-- **虚拟窗口与坐标缩放**：仅在 Wine 且设置 `LEVI_WINE_RENDER_SCALE`（如 `1.50` / `2.00`）时激活，按倍率缩放游戏读取的客户区尺寸与客户区鼠标坐标，配合 macOS 宿主侧原生 `MTLFXSpatialScaler` 实现 D3DMetal 空间超分。
-- **Arke 中文字体修复**：在 Wine 下若 `C:\Windows\Fonts\msyh.ttc` 缺失，自动从 macOS 系统自带字体（优先 `Hiragino Sans GB.ttc`）复制到容器字体目录，修复 Arke 等模组中文显示为 `?` 的问题。
-- **PreLoader 97% 堆锁兼容修复**：与 PreLoader 一起在 Wine 中运行时，避免挂起持有进程堆锁的线程导致的启动卡死。
+A LeviLamina client companion plugin for Minecraft: Bedrock Edition running under Wine, providing host integration bridges and compatibility fixes between a native host launcher (such as LeviLauncher on macOS) and the Wine game process:
 
-## 安装
+- **Xbox Sign-In Bridge**: When the game generates a device code, the plugin forwards the prompt and sign-in result over loopback to a compatible native launcher, which opens the Microsoft verification page and tracks progress. If the launcher bridge is unavailable, the game falls back to its original sign-in prompt. Authentication and credential storage remain handled by XGameRuntime.
+- **Native Terminal Console Bridge**: When the instance console is enabled, the plugin intercepts standard streams and Win32 Console APIs in-process (with ANSI color, UTF-8 text output, and interactive input) and bridges them over loopback to the host's default terminal emulator (e.g., Ghostty, iTerm2, Terminal.app).
+- **Native Finder & File/Folder Dialog Bridge**: Active only under Wine (disable with `LEVI_WINE_SHELL_FIX=0`). Intercepts folder-opening and file-revealing Win32 calls (`ShellExecuteW/A`, `ShellExecuteExW/A`, `SHOpenFolderAndSelectItems`, and `explorer.exe` / `cmd /c start` via `CreateProcessW/A` & `WinExec`) and opens them in macOS Finder via the host bridge (automatically falling back to `winebrowser.exe` without a launcher). When the host bridge is available, also intercepts `GetOpenFileNameW/A`, `GetSaveFileNameW/A`, and `SHBrowseForFolderW/A` to show native macOS open/save file and folder pickers.
+- **Wine Input Fixes**: Active only under Wine. Prevents first-frame camera snap spikes after regaining focus, releases stuck modifier/movement keys on window switch, and maps in-game `Cmd+C/V/X/A` shortcuts.
+- **Virtual Window & Input Scaling (MetalFX)**: Active only under Wine when `LEVI_WINE_RENDER_SCALE` is set (e.g., `1.50` / `2.00`). Scales the client area dimensions and mouse coordinates seen by the game to pair with native macOS `MTLFXSpatialScaler` upscaling on D3DMetal.
+- **CJK Fallback Font Fix (Arke, etc.)**: Under Wine, if `C:\Windows\Fonts\msyh.ttc` is missing, automatically copies a macOS system CJK font (preferring `Hiragino Sans GB.ttc`) into the prefix's Fonts directory so Chinese characters render properly instead of `?`.
+- **PreLoader 97% Heap-Lock Fix**: Prevents startup deadlocks when running alongside PreLoader under Wine by avoiding suspending threads while they hold the process heap lock.
 
-lip 包 ID 为 `github.com/wzyyyyyyy/LeviWineBridge`，适用于 `client` / `win-x64`，兼容全版本 Minecraft 与 LeviLamina（`>=0.0.0`）。通过 LeviLauncher 的模组目录安装时，包管理器会自动解析该依赖。
+## Installation
 
-手动导入时，先在目标实例安装对应版本的 LeviLamina 客户端，再从 [GitHub Releases](https://github.com/wzyyyyyyy/LeviWineBridge/releases) 下载 `LeviWineBridge-client-windows-x64.zip`，通过 LeviLauncher 的「管理模组」导入。
+The lip package ID is `github.com/wzyyyyyyy/LeviWineBridge` (`client` / `win-x64`), compatible with all Minecraft and LeviLamina versions (`>=0.0.0`). Installing it from LeviLauncher's mod catalog resolves dependencies automatically.
 
-## 构建
+For manual installation, first install LeviLamina for your instance, then download `LeviWineBridge-client-windows-x64.zip` from [GitHub Releases](https://github.com/wzyyyyyyy/LeviWineBridge/releases) and import it via LeviLauncher's mod manager.
 
-需要 Python 3 和 MinGW-w64，或者 Zig。
+## Building
+
+Requires Python 3 and MinGW-w64 (or Zig):
 
 ```sh
 python3 build.py
-# 或者使用 Zig
+# Or using Zig
 MINGW_CC='zig cc -target x86_64-windows-gnu' python3 build.py
 ```
 
-构建产物为 `dist/LeviWineBridge.dll`。LeviLauncher 启动游戏时会按需提供以下本机回环环境变量：
+The build output is `dist/LeviWineBridge.dll`. LeviLauncher injects the following loopback / runtime environment variables as needed:
 
-- 登录桥：`LEVI_GAME_AUTH_URL`、`LEVI_GAME_AUTH_TOKEN`
-- 控制台桥：`LEVI_CONSOLE_ADDR`、`LEVI_CONSOLE_TOKEN`
-- 虚拟渲染缩放：`LEVI_WINE_RENDER_SCALE`（> `1.01` 且 <= `4.0` 时启用，例如 `1.33`、`1.50`、`2.00`）
+- Sign-in bridge: `LEVI_GAME_AUTH_URL`, `LEVI_GAME_AUTH_TOKEN`
+- Console bridge: `LEVI_CONSOLE_ADDR`, `LEVI_CONSOLE_TOKEN`
+- Shell & dialog bridge: `LEVI_SHELL_BRIDGE_URL`, `LEVI_SHELL_BRIDGE_TOKEN` (set `LEVI_WINE_SHELL_FIX=0` to disable)
+- Virtual render scaling: `LEVI_WINE_RENDER_SCALE` (active when `> 1.01` and `<= 4.0`, e.g., `1.33`, `1.50`, `2.00`)
 
-发布时，将 DLL、`manifest.json` 和 `COPYING` 放入 ZIP 内的 `LeviClient/`，以 `LeviWineBridge-client-windows-x64.zip` 上传。Git 标签、`lip.toml` 和 `manifest.json` 使用同一版本号。
+When publishing a release, package the DLL, `manifest.json`, and `COPYING` inside `LeviClient/` in `LeviWineBridge-client-windows-x64.zip`. Keep the Git tag, `lip.toml`, and `manifest.json` on the same version.
 
-## 验证
+## Verification
 
 ```sh
 cc -Wall -Wextra -Werror protocol_test.c -o /tmp/levi-wine-bridge-protocol
@@ -45,6 +49,8 @@ python3 tests/smoke.py \
   --output /tmp/levi-wine-bridge-smoke
 ```
 
-Wine 集成测试使用模拟设备码与本机回环服务，检查登录转发、失败回退、未配置静默、内存锁兼容以及控制台双向 UTF-8 / ANSI 交互。
+The Wine integration suite uses a mock device-code prompt and local loopback servers to verify sign-in forwarding, fallback, inert mode, PreLoader heap-lock guard, bidirectional UTF-8 / ANSI console I/O, input fixes, and folder-open / file-dialog bridging.
 
-源码最初从 [LeviLauncher 的 macOS 适配分支](https://github.com/wzyyyyyyy/LeviLauncher) 中的 `native/leviclient` 拆出。许可证为 GPL-3.0-only，见 [COPYING](COPYING)。
+## License
+
+Originally split out from `native/leviclient` in [LeviLauncher's macOS adaptation branch](https://github.com/wzyyyyyyy/LeviLauncher). Licensed under GPL-3.0-only; see [COPYING](COPYING).
