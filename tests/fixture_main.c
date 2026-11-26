@@ -1,4 +1,7 @@
 #include <windows.h>
+#include <shellapi.h>
+#include <commdlg.h>
+#include <shlobj.h>
 #include <stdio.h>
 static HANDLE heap_locked;
 static LONG volatile heap_released;
@@ -116,12 +119,115 @@ int main(void) {
             input_ok = 0;
         }
     }
+    int shell_ok = -1;
+    if (GetEnvironmentVariableA("LEVI_SHELL_BRIDGE_TOKEN", environment, sizeof environment)) {
+        WCHAR mod_dir[MAX_PATH];
+        GetModuleFileNameW(NULL, mod_dir, MAX_PATH);
+        WCHAR *wslash = wcsrchr(mod_dir, L'\\');
+        if (wslash) *wslash = 0;
+
+        WCHAR shader_dir[MAX_PATH];
+        _snwprintf(shader_dir, MAX_PATH, L"%ls\\123\x4E2D\x6587\\shaderpacks", mod_dir);
+        WCHAR parent_dir[MAX_PATH];
+        _snwprintf(parent_dir, MAX_PATH, L"%ls\\123\x4E2D\x6587", mod_dir);
+        CreateDirectoryW(parent_dir, NULL);
+        CreateDirectoryW(shader_dir, NULL);
+
+        WCHAR sample_file[MAX_PATH];
+        _snwprintf(sample_file, MAX_PATH, L"%ls\\pack.zip", shader_dir);
+        HANDLE sf = CreateFileW(sample_file, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+        if (sf != INVALID_HANDLE_VALUE) CloseHandle(sf);
+
+        /* 1. ShellExecuteW on directory (exact Arke pattern) */
+        int se_w = (INT_PTR)ShellExecuteW(NULL, L"open", shader_dir, NULL, NULL, SW_SHOWNORMAL) > 32;
+
+        /* 2. ShellExecuteA on ASCII directory (exact Dear ImGui OpenInShell pattern) */
+        char mod_dir_a[MAX_PATH];
+        GetModuleFileNameA(NULL, mod_dir_a, MAX_PATH);
+        char *aslash = strrchr(mod_dir_a, '\\');
+        if (aslash) *aslash = 0;
+        int se_a = (INT_PTR)ShellExecuteA(NULL, "open", mod_dir_a, NULL, NULL, SW_SHOWDEFAULT) > 32;
+
+        /* 3. ShellExecuteExW explorer.exe /select,"<file>" */
+        WCHAR sel_params[MAX_PATH + 32];
+        _snwprintf(sel_params, MAX_PATH + 32, L"/select,\"%ls\"", sample_file);
+        SHELLEXECUTEINFOW sei;
+        memset(&sei, 0, sizeof sei);
+        sei.cbSize = sizeof sei;
+        sei.lpVerb = L"open";
+        sei.lpFile = L"explorer.exe";
+        sei.lpParameters = sel_params;
+        sei.nShow = SW_SHOWNORMAL;
+        int see_w = ShellExecuteExW(&sei) ? 1 : 0;
+
+        /* 4. CreateProcessW explorer.exe "<dir>" */
+        WCHAR cp_cmd[MAX_PATH + 64];
+        _snwprintf(cp_cmd, MAX_PATH + 64, L"explorer.exe \"%ls\"", shader_dir);
+        STARTUPINFOW si;
+        PROCESS_INFORMATION pi;
+        memset(&si, 0, sizeof si);
+        si.cb = sizeof si;
+        memset(&pi, 0, sizeof pi);
+        int cp_w = CreateProcessW(NULL, cp_cmd, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi) ? 1 : 0;
+        if (cp_w) {
+            WaitForSingleObject(pi.hProcess, 1000);
+            CloseHandle(pi.hProcess);
+            CloseHandle(pi.hThread);
+        }
+
+        /* 5. GetOpenFileNameW (exact Arke pattern) */
+        WCHAR open_buf[1024];
+        open_buf[0] = 0;
+        OPENFILENAMEW ofn;
+        memset(&ofn, 0, sizeof ofn);
+        ofn.lStructSize = sizeof ofn;
+        ofn.lpstrFilter = L"Shader Config (*.txt)\0*.txt\0All Files (*.*)\0*.*\0";
+        ofn.lpstrFile = open_buf;
+        ofn.nMaxFile = 1024;
+        ofn.lpstrInitialDir = shader_dir;
+        ofn.lpstrDefExt = L"txt";
+        ofn.Flags = OFN_EXPLORER | OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR;
+        int ofn_open = GetOpenFileNameW(&ofn) && wcsstr(open_buf, L"picked.txt") != NULL && ofn.nFileOffset > 0 && ofn.nFileExtension > ofn.nFileOffset;
+
+        /* 6. GetSaveFileNameW cancelled */
+        WCHAR save_buf[1024];
+        wcscpy(save_buf, L"out.txt");
+        OPENFILENAMEW sfn;
+        memset(&sfn, 0, sizeof sfn);
+        sfn.lStructSize = sizeof sfn;
+        sfn.lpstrFile = save_buf;
+        sfn.nMaxFile = 1024;
+        sfn.lpstrInitialDir = shader_dir;
+        sfn.lpstrDefExt = L"txt";
+        sfn.Flags = OFN_EXPLORER | OFN_NOCHANGEDIR | OFN_OVERWRITEPROMPT;
+        int ofn_save_cancel = GetSaveFileNameW(&sfn) == FALSE;
+
+        /* 7. SHBrowseForFolderW */
+        WCHAR disp[MAX_PATH];
+        disp[0] = 0;
+        BROWSEINFOW bi;
+        memset(&bi, 0, sizeof bi);
+        bi.pszDisplayName = disp;
+        bi.lpszTitle = L"Pick folder";
+        PIDLIST_ABSOLUTE pidl = SHBrowseForFolderW(&bi);
+        WCHAR picked_folder[MAX_PATH];
+        picked_folder[0] = 0;
+        int browse_ok = 0;
+        if (pidl) {
+            browse_ok = SHGetPathFromIDListW(pidl, picked_folder) && wcsstr(picked_folder, L"shaderpacks") != NULL;
+            ILFree(pidl);
+        }
+
+        shell_ok = (se_w && se_a && see_w && cp_w && ofn_open && ofn_save_cancel && browse_ok) ? 1 : 0;
+    }
     strcpy(name + 1, "result.txt");
-    int length = input_ok >= 0
-        ? snprintf(body, sizeof body, "prompt=%d other=%d guard=%d input=%d\n", prompt, other, guard, input_ok)
-        : (console_ok >= 0
-            ? snprintf(body, sizeof body, "prompt=%d other=%d guard=%d console=%d\n", prompt, other, guard, console_ok)
-            : snprintf(body, sizeof body, "prompt=%d other=%d guard=%d\n", prompt, other, guard));
+    int length = shell_ok >= 0
+        ? snprintf(body, sizeof body, "prompt=%d other=%d guard=%d shell=%d\n", prompt, other, guard, shell_ok)
+        : (input_ok >= 0
+            ? snprintf(body, sizeof body, "prompt=%d other=%d guard=%d input=%d\n", prompt, other, guard, input_ok)
+            : (console_ok >= 0
+                ? snprintf(body, sizeof body, "prompt=%d other=%d guard=%d console=%d\n", prompt, other, guard, console_ok)
+                : snprintf(body, sizeof body, "prompt=%d other=%d guard=%d\n", prompt, other, guard)));
     HANDLE output = CreateFileA(path, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     if (output == INVALID_HANDLE_VALUE) return 2;
     DWORD written;
