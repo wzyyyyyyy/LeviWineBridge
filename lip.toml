@@ -1,11 +1,11 @@
 format = 4
 id = "github.com/wzyyyyyyy/LeviWineBridge"
-version = "0.1.3"
+version = "0.1.4"
 
 [info]
 name = "LeviWineBridge"
-logo = "https://raw.githubusercontent.com/wzyyyyyyy/LeviWineBridge/v0.1.3/icon.png"
-description = "LeviLamina client plugin for Minecraft Bedrock in Wine: bridges Xbox sign-in and native interactive console, auto-installs CJK fallback font (msyh.ttc), and fixes Wine input/PreLoader issues."
+logo = "https://raw.githubusercontent.com/wzyyyyyyy/LeviWineBridge/v0.1.4/icon.png"
+description = "LeviLamina client plugin for Minecraft Bedrock in Wine: bridges Xbox sign-in, native terminal console, Finder/file dialogs, and MetalFX render scaling; auto-installs CJK fallback font and fixes Wine input/PreLoader issues."
 tags = ["utility", "bugfix"]
 
 [[variants.""]]
