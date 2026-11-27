@@ -9,6 +9,8 @@
 - **原生 Finder 与文件选择对话框桥接**：仅在 Wine 下激活（可通过 `LEVI_WINE_SHELL_FIX=0` 关闭）。接管 `ShellExecuteW/A`、`ShellExecuteExW/A`、`SHOpenFolderAndSelectItems` 以及 `CreateProcessW/A` / `WinExec`（`explorer.exe` / `cmd /c start`）的打开目录与定位文件调用，通过本机回环交由 macOS 原生 Finder 打开（无启动器时自动回退到 `winebrowser.exe`）；在启动器桥接可用时同时接管 `GetOpenFileNameW/A`、`GetSaveFileNameW/A` 与 `SHBrowseForFolderW/A`，弹出 macOS 原生打开/保存文件与选目录面板。
 - **Wine 输入体验修复**：仅在 Wine 下激活，包含重获焦点首帧防视角甩头、切窗自动释放粘连修饰/移动键，以及游戏内 `Cmd+C/V/X/A` 快捷键映射。
 - **虚拟窗口与坐标缩放（MetalFX）**：仅在 Wine 且设置 `LEVI_WINE_RENDER_SCALE`（如 `1.50` / `2.00`）时激活，按倍率缩放游戏读取的客户区尺寸与客户区鼠标坐标，配合 macOS 宿主侧原生 `MTLFXSpatialScaler` 实现 D3DMetal 空间超分。
+- **GPTK（D3DMetal）DLSS 档位控制**：仅在 Wine 且设置 `LEVI_GPTK_DLSS_QUALITY`（`ultra_performance` / `performance` / `balanced` / `dlaa`）时激活。在不修改任何 Apple 签名文件的前提下接管 `nvngx-on-metalfx.dll`（含重定向加载的 `nvngx.dll` / `_nvngx.dll`）分发表，在 `DLSSOptimalSettingsCallback` 与 `NVSDK_NGX_D3D12_CreateFeature` 中替换基岩版写死的 `Quality` 档位。
+- **GPTK 4（D3DMetal）光追堆存储模式修复**：仅在 Wine 下启用 D3DMetal DXR（`D3DM_SUPPORT_DXR=1` 且设置 `D3DMETAL_RUNTIME_DIR`，可通过 `LEVI_GPTK4_RTX_FIX=0/1` 覆盖）时激活。接管 `d3d12.dll` 的 `D3D12CreateDevice` 分发槽与 `ID3D12Device` COM 虚表，将 GPU-only 的 `CUSTOM + NOT_AVAILABLE` 堆规范化为 `DEFAULT`（`MTLStorageModePrivate`），并对非 `DEFAULT` 堆上的加速结构做 committed `DEFAULT` 兜底，修复 Apple GPTK 4 beta 3 下光追进世界触发 `MTLStorageModePrivate` 与 `MTLStorageModeShared` 断言崩溃的问题。
 - **Arke 中文字体修复**：在 Wine 下若 `C:\Windows\Fonts\msyh.ttc` 缺失，自动从 macOS 系统自带字体（优先 `Hiragino Sans GB.ttc`）复制到容器字体目录，修复 Arke 等模组中文显示为 `?` 的问题。
 - **PreLoader 97% 堆锁兼容修复**：与 PreLoader 一起在 Wine 中运行时，避免挂起持有进程堆锁的线程导致的启动卡死。
 
@@ -34,6 +36,8 @@ MINGW_CC='zig cc -target x86_64-windows-gnu' python3 build.py
 - 控制台桥：`LEVI_CONSOLE_ADDR`、`LEVI_CONSOLE_TOKEN`
 - Shell / 对话框桥：`LEVI_SHELL_BRIDGE_URL`、`LEVI_SHELL_BRIDGE_TOKEN`（设 `LEVI_WINE_SHELL_FIX=0` 可关闭）
 - 虚拟渲染缩放：`LEVI_WINE_RENDER_SCALE`（`> 1.01` 且 `<= 4.0` 时启用，例如 `1.33`、`1.50`、`2.00`）
+- GPTK DLSS 档位控制：`LEVI_GPTK_DLSS_QUALITY`（`ultra_performance` / `performance` / `balanced` / `dlaa`）
+- GPTK 4 光追堆修复：设置 `D3DM_SUPPORT_DXR=1` 且存在 `D3DMETAL_RUNTIME_DIR` 时自动启用（可通过 `LEVI_GPTK4_RTX_FIX=1/0` 强制开关）
 
 发布时，将 DLL、`manifest.json` 和 `COPYING` 放入 ZIP 内的 `LeviClient/`，以 `LeviWineBridge-client-windows-x64.zip` 上传。Git 标签、`lip.toml` 和 `manifest.json` 使用同一版本号。
 

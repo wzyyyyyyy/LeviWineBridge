@@ -9,6 +9,8 @@ A LeviLamina client companion plugin for Minecraft: Bedrock Edition running unde
 - **Native Finder & File/Folder Dialog Bridge**: Active only under Wine (disable with `LEVI_WINE_SHELL_FIX=0`). Intercepts folder-opening and file-revealing Win32 calls (`ShellExecuteW/A`, `ShellExecuteExW/A`, `SHOpenFolderAndSelectItems`, and `explorer.exe` / `cmd /c start` via `CreateProcessW/A` & `WinExec`) and opens them in macOS Finder via the host bridge (automatically falling back to `winebrowser.exe` without a launcher). When the host bridge is available, also intercepts `GetOpenFileNameW/A`, `GetSaveFileNameW/A`, and `SHBrowseForFolderW/A` to show native macOS open/save file and folder pickers.
 - **Wine Input Fixes**: Active only under Wine. Prevents first-frame camera snap spikes after regaining focus, releases stuck modifier/movement keys on window switch, and maps in-game `Cmd+C/V/X/A` shortcuts.
 - **Virtual Window & Input Scaling (MetalFX)**: Active only under Wine when `LEVI_WINE_RENDER_SCALE` is set (e.g., `1.50` / `2.00`). Scales the client area dimensions and mouse coordinates seen by the game to pair with native macOS `MTLFXSpatialScaler` upscaling on D3DMetal.
+- **GPTK (D3DMetal) DLSS Quality Override**: Active only under Wine when `LEVI_GPTK_DLSS_QUALITY` is set (`ultra_performance`, `performance`, `balanced`, `dlaa`). Hooks Apple's `nvngx-on-metalfx.dll` (`nvngx.dll` / `_nvngx.dll`) dispatch table without modifying signed files to override Bedrock's hardcoded `Quality` preset in `DLSSOptimalSettingsCallback` and `NVSDK_NGX_D3D12_CreateFeature`.
+- **GPTK 4 (D3DMetal) RTX Heap Fix**: Active only under Wine when D3DMetal DXR is enabled (`D3DM_SUPPORT_DXR=1` with `D3DMETAL_RUNTIME_DIR` set; override with `LEVI_GPTK4_RTX_FIX=0/1`). Hooks `d3d12.dll`'s `D3D12CreateDevice` dispatch slot and `ID3D12Device` COM vtable to normalize GPU-only `CUSTOM + NOT_AVAILABLE` heaps to `DEFAULT` (`MTLStorageModePrivate`) and fall back non-`DEFAULT` placed acceleration structures to committed `DEFAULT` resources, preventing Apple GPTK 4 beta 3's `MTLStorageModePrivate` vs `MTLStorageModeShared` assertion crash on RTX world load.
 - **CJK Fallback Font Fix (Arke, etc.)**: Under Wine, if `C:\Windows\Fonts\msyh.ttc` is missing, automatically copies a macOS system CJK font (preferring `Hiragino Sans GB.ttc`) into the prefix's Fonts directory so Chinese characters render properly instead of `?`.
 - **PreLoader 97% Heap-Lock Fix**: Prevents startup deadlocks when running alongside PreLoader under Wine by avoiding suspending threads while they hold the process heap lock.
 
@@ -34,6 +36,8 @@ The build output is `dist/LeviWineBridge.dll`. LeviLauncher injects the followin
 - Console bridge: `LEVI_CONSOLE_ADDR`, `LEVI_CONSOLE_TOKEN`
 - Shell & dialog bridge: `LEVI_SHELL_BRIDGE_URL`, `LEVI_SHELL_BRIDGE_TOKEN` (set `LEVI_WINE_SHELL_FIX=0` to disable)
 - Virtual render scaling: `LEVI_WINE_RENDER_SCALE` (active when `> 1.01` and `<= 4.0`, e.g., `1.33`, `1.50`, `2.00`)
+- GPTK DLSS quality override: `LEVI_GPTK_DLSS_QUALITY` (`ultra_performance`, `performance`, `balanced`, `dlaa`)
+- GPTK 4 RTX heap fix: enabled automatically when `D3DM_SUPPORT_DXR=1` and `D3DMETAL_RUNTIME_DIR` is set (force/disable with `LEVI_GPTK4_RTX_FIX=1/0`)
 
 When publishing a release, package the DLL, `manifest.json`, and `COPYING` inside `LeviClient/` in `LeviWineBridge-client-windows-x64.zip`. Keep the Git tag, `lip.toml`, and `manifest.json` on the same version.
 

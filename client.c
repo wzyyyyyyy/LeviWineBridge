@@ -11,6 +11,8 @@
 #include "heap_guard.h"
 #include "console_bridge.h"
 #include "render_scale.h"
+#include "dlss_quality.h"
+#include "gptk4_rtx_fix.h"
 #include "input_fix.h"
 #include "font_fix.h"
 #include "shell_fix.h"
@@ -155,6 +157,8 @@ BOOL WINAPI DllMain(HINSTANCE module, DWORD reason, LPVOID reserved) {
     DisableThreadLibraryCalls(module);
     (void)start_console_bridge(module);
     (void)start_render_scale(module);
+    (void)start_dlss_quality(module);
+    (void)start_gptk4_rtx_fix(module);
     (void)start_input_fix();
     (void)start_font_fix();
     (void)start_shell_fix(module);

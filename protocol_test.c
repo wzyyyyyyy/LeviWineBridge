@@ -11,8 +11,59 @@ typedef uint16_t USHORT;
 #include "input_fix.h"
 #define LEVI_RENDER_SCALE_PURE_TEST
 #include "render_scale.h"
+#define LEVI_DLSS_QUALITY_PURE_TEST
+#include "dlss_quality.h"
+#define LEVI_GPTK4_RTX_FIX_PURE_TEST
+#include "gptk4_rtx_fix.h"
 #define LEVI_SHELL_FIX_PURE_TEST
 #include "shell_fix.h"
+
+typedef struct MockNgxParam {
+    const LeviNgxParameterVtbl *lpVtbl;
+    void *callback;
+    int perf_quality;
+    int seen_quality_in_cb;
+    unsigned int out_w;
+    unsigned int out_h;
+} MockNgxParam;
+
+static void mock_set_void(LeviNgxParameter *self, const char *name, void *value) {
+    MockNgxParam *m = (MockNgxParam *)self;
+    if (!strcmp(name, "DLSSOptimalSettingsCallback")) m->callback = value;
+}
+
+static void mock_set_int(LeviNgxParameter *self, const char *name, int value) {
+    MockNgxParam *m = (MockNgxParam *)self;
+    if (!strcmp(name, "PerfQualityValue")) m->perf_quality = value;
+}
+
+static uint32_t mock_get_void(const LeviNgxParameter *self, const char *name, void **out) {
+    const MockNgxParam *m = (const MockNgxParam *)self;
+    if (!strcmp(name, "DLSSOptimalSettingsCallback") && m->callback) {
+        *out = m->callback;
+        return LEVI_NGX_RESULT_SUCCESS;
+    }
+    return 0xBAD00001u;
+}
+
+static uint32_t mock_apple_optimal_cb(LeviNgxParameter *self) {
+    MockNgxParam *m = (MockNgxParam *)self;
+    m->seen_quality_in_cb = m->perf_quality;
+    if (m->perf_quality == LEVI_NGX_PERF_QUALITY_PERFORMANCE) {
+        m->out_w = 1280;
+        m->out_h = 720;
+    } else {
+        m->out_w = 1706;
+        m->out_h = 960;
+    }
+    return LEVI_NGX_RESULT_SUCCESS;
+}
+
+static LeviNgxOptimalSettingsCb g_test_orig_cb = NULL;
+static uint32_t mock_wrapped_optimal_cb(LeviNgxParameter *self) {
+    levi_ngx_apply_perf_quality(self, LEVI_NGX_PERF_QUALITY_PERFORMANCE);
+    return g_test_orig_cb(self);
+}
 
 int main(void) {
     char code[9];
@@ -97,5 +148,136 @@ int main(void) {
 
     assert(levi_json_parse_dialog_response("{\"cancelled\":true,\"paths\":[]}", &cancelled, pbuf, sizeof pbuf, offs, 8, &count) == 1);
     assert(cancelled == 1 && count == 0);
+
+    /* GPTK DLSS quality override helpers. */
+    assert(levi_parse_gptk_dlss_quality(NULL) == -1);
+    assert(levi_parse_gptk_dlss_quality("") == -1);
+    assert(levi_parse_gptk_dlss_quality("auto") == -1);
+    assert(levi_parse_gptk_dlss_quality("quality") == -1);
+    assert(levi_parse_gptk_dlss_quality("invalid") == -1);
+    assert(levi_parse_gptk_dlss_quality("ultra_performance") == LEVI_NGX_PERF_QUALITY_ULTRA_PERFORMANCE);
+    assert(levi_parse_gptk_dlss_quality("performance") == LEVI_NGX_PERF_QUALITY_PERFORMANCE);
+    assert(levi_parse_gptk_dlss_quality("BALANCED") == LEVI_NGX_PERF_QUALITY_BALANCED);
+    assert(levi_parse_gptk_dlss_quality("  dlaa\n") == LEVI_NGX_PERF_QUALITY_DLAA);
+    assert(!strcmp(levi_dlss_quality_name(LEVI_NGX_PERF_QUALITY_ULTRA_PERFORMANCE), "ultra_performance"));
+    assert(!strcmp(levi_dlss_quality_name(LEVI_NGX_PERF_QUALITY_PERFORMANCE), "performance"));
+    assert(!strcmp(levi_dlss_quality_name(LEVI_NGX_PERF_QUALITY_BALANCED), "balanced"));
+    assert(!strcmp(levi_dlss_quality_name(LEVI_NGX_PERF_QUALITY_DLAA), "dlaa"));
+    assert(!strcmp(levi_dlss_quality_name(-1), "unknown"));
+
+    assert(levi_dlss_is_target_dll(L"nvngx-on-metalfx.dll") == 1);
+    assert(levi_dlss_is_target_dll(L"C:\\windows\\system32\\NVNGX-ON-METALFX.DLL") == 1);
+    assert(levi_dlss_is_target_dll(L"nvngx.dll") == 1);
+    assert(levi_dlss_is_target_dll(L"C:\\windows\\system32\\_NVNGX.DLL") == 1);
+    assert(levi_dlss_is_target_dll(L"nvngx_dlss.dll") == 0);
+    assert(levi_dlss_is_target_dll(NULL) == 0);
+
+    /* GPTK 3 stub: mov rax, [rip+0x1ab1]; test rax, rax; je +3; jmp rax */
+    static const uint8_t gptk3_stub[] = {
+        0x48, 0x8b, 0x05, 0xb1, 0x1a, 0x00, 0x00,
+        0x48, 0x85, 0xc0, 0x74, 0x03, 0x48, 0xff, 0xe0
+    };
+    int32_t disp = 0;
+    size_t next_off = 0;
+    assert(levi_find_rip_mov_rax_slot(gptk3_stub, sizeof gptk3_stub, &disp, &next_off) == 1);
+    assert(disp == 0x1ab1 && next_off == 7);
+
+    /* GPTK 4 beta 3 stub: push rsi; sub rsp, 0x30; mov rax, [rip+0x22ac]; test rax, rax */
+    static const uint8_t gptk4_stub[] = {
+        0x56, 0x48, 0x83, 0xec, 0x30,
+        0x48, 0x8b, 0x05, 0xac, 0x22, 0x00, 0x00,
+        0x48, 0x85, 0xc0, 0x74, 0x08
+    };
+    assert(levi_find_rip_mov_rax_slot(gptk4_stub, sizeof gptk4_stub, &disp, &next_off) == 1);
+    assert(disp == 0x22ac && next_off == 12);
+
+    /* Mock NVSDK_NGX_Parameter callback wrapping & PerfQualityValue rewrite. */
+    LeviNgxParameterVtbl vtbl;
+    memset(&vtbl, 0, sizeof vtbl);
+    vtbl.SetVoidPointer = mock_set_void;
+    vtbl.SetInt = mock_set_int;
+    vtbl.GetVoidPointer = mock_get_void;
+    MockNgxParam mock_param = { &vtbl, (void *)mock_apple_optimal_cb, LEVI_NGX_PERF_QUALITY_QUALITY, -1, 0, 0 };
+    assert(levi_ngx_wrap_optimal_callback((LeviNgxParameter *)&mock_param,
+                                          mock_wrapped_optimal_cb, &g_test_orig_cb) == 1);
+    assert(g_test_orig_cb == mock_apple_optimal_cb);
+    assert(mock_param.callback == (void *)mock_wrapped_optimal_cb);
+    LeviNgxOptimalSettingsCb cb = (LeviNgxOptimalSettingsCb)mock_param.callback;
+    assert(cb((LeviNgxParameter *)&mock_param) == LEVI_NGX_RESULT_SUCCESS);
+    assert(mock_param.seen_quality_in_cb == LEVI_NGX_PERF_QUALITY_PERFORMANCE);
+    assert(mock_param.out_w == 1280 && mock_param.out_h == 720);
+
+    /* GPTK 4 RTX heap storage-mode fix helpers. */
+    assert(levi_rtx_should_activate(NULL, NULL, NULL) == 0);
+    assert(levi_rtx_should_activate(NULL, "1", NULL) == 0);
+    assert(levi_rtx_should_activate(NULL, "0", "/runtime/d3dmetal-gptk4-beta3") == 0);
+    assert(levi_rtx_should_activate(NULL, "1", "/runtime/d3dmetal-gptk4-beta3") == 1);
+    assert(levi_rtx_should_activate("0", "1", "/runtime/d3dmetal-gptk4-beta3") == 0);
+    assert(levi_rtx_should_activate("1", NULL, NULL) == 1);
+
+    assert(levi_rtx_is_d3d12_dll(L"d3d12.dll") == 1);
+    assert(levi_rtx_is_d3d12_dll(L"C:\\windows\\system32\\D3D12.DLL") == 1);
+    assert(levi_rtx_is_d3d12_dll(L"d3d12core.dll") == 0);
+    assert(levi_rtx_is_d3d12_dll(NULL) == 0);
+
+    LeviD3D12HeapDesc custom_gpu_heap = {
+        1048576ull,
+        { LEVI_D3D12_HEAP_TYPE_CUSTOM, LEVI_D3D12_CPU_PAGE_PROPERTY_NOT_AVAILABLE, 2u, 1u, 1u },
+        65536ull,
+        0x40u,
+        0u
+    };
+    LeviD3D12HeapDesc norm_heap;
+    memset(&norm_heap, 0, sizeof norm_heap);
+    assert(levi_rtx_normalize_heap_desc(&custom_gpu_heap, &norm_heap) == 1);
+    assert(norm_heap.SizeInBytes == 1048576ull);
+    assert(norm_heap.Alignment == 65536ull);
+    assert(norm_heap.Flags == 0x40u);
+    assert(norm_heap.Properties.Type == LEVI_D3D12_HEAP_TYPE_DEFAULT);
+    assert(norm_heap.Properties.CPUPageProperty == LEVI_D3D12_CPU_PAGE_PROPERTY_UNKNOWN);
+    assert(norm_heap.Properties.MemoryPoolPreference == LEVI_D3D12_MEMORY_POOL_UNKNOWN);
+    assert(norm_heap.Properties.CreationNodeMask == 1u && norm_heap.Properties.VisibleNodeMask == 1u);
+
+    /* CPU-accessible CUSTOM heap (WRITE_COMBINE = 2) must NOT be rewritten to DEFAULT. */
+    LeviD3D12HeapDesc custom_cpu_heap = custom_gpu_heap;
+    custom_cpu_heap.Properties.CPUPageProperty = 2u;
+    assert(levi_rtx_normalize_heap_desc(&custom_cpu_heap, &norm_heap) == 0);
+
+    /* Non-CUSTOM heaps remain untouched. */
+    LeviD3D12HeapDesc default_heap = custom_gpu_heap;
+    default_heap.Properties.Type = LEVI_D3D12_HEAP_TYPE_DEFAULT;
+    default_heap.Properties.CPUPageProperty = 0u;
+    assert(levi_rtx_normalize_heap_desc(&default_heap, &norm_heap) == 0);
+
+    /* Placed AS fallback only triggers for AS resources on non-DEFAULT heaps. */
+    assert(levi_rtx_needs_placed_as_fallback(LEVI_D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE, &custom_cpu_heap) == 1);
+    assert(levi_rtx_needs_placed_as_fallback(LEVI_D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE, &default_heap) == 0);
+    assert(levi_rtx_needs_placed_as_fallback(0u, &custom_cpu_heap) == 0);
+
+    /* GPTK 3 D3D12CreateDevice stub: mov rax, [rip+0x1df1]; rex.W jmp rax */
+    static const uint8_t d3d12_gptk3_stub[] = {
+        0x48, 0x8b, 0x05, 0xf1, 0x1d, 0x00, 0x00,
+        0x48, 0xff, 0xe0
+    };
+    assert(levi_find_d3d12_create_device_slot(d3d12_gptk3_stub, sizeof d3d12_gptk3_stub, &disp, &next_off) == 1);
+    assert(disp == 0x1df1 && next_off == 7);
+
+    /* GPTK 4 beta 3 D3D12CreateDevice stub: first slot is EnsureDXGIInitialized (jne + call),
+     * second slot is gGFXTDispatch (je + jmp rax) and must be the one selected. */
+    static const uint8_t d3d12_gptk4_stub[] = {
+        0x48, 0x8b, 0x05, 0xe4, 0xa5, 0x00, 0x00, /* mov rax, [rip+0xa5e4] (EnsureDXGIInitialized) */
+        0x48, 0x85, 0xc0,                         /* test rax, rax */
+        0x75, 0x04,                               /* jne +4 */
+        0x90, 0x90, 0x90, 0x90,
+        0xff, 0xd0,                               /* call rax */
+        0x48, 0x8b, 0x05, 0xa8, 0x35, 0x00, 0x00, /* mov rax, [rip+0x35a8] (gGFXTDispatch) */
+        0x48, 0x85, 0xc0,                         /* test rax, rax */
+        0x74, 0x08,                               /* je +8 */
+        0x48, 0x89, 0xf1,                         /* mov rcx, rsi */
+        0x48, 0x83, 0xc4, 0x60,                   /* add rsp, 0x60 */
+        0x48, 0xff, 0xe0                          /* rex.W jmp rax */
+    };
+    assert(levi_find_d3d12_create_device_slot(d3d12_gptk4_stub, sizeof d3d12_gptk4_stub, &disp, &next_off) == 1);
+    assert(disp == 0x35a8 && next_off == 25);
     return 0;
 }
