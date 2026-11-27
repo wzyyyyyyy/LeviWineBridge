@@ -154,7 +154,7 @@ BOOL WINAPI DllMain(HINSTANCE module, DWORD reason, LPVOID reserved) {
     if (reason != DLL_PROCESS_ATTACH) return TRUE;
     DisableThreadLibraryCalls(module);
     (void)start_console_bridge(module);
-    (void)start_render_scale();
+    (void)start_render_scale(module);
     (void)start_input_fix();
     (void)start_font_fix();
     (void)start_shell_fix(module);

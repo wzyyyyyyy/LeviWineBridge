@@ -286,6 +286,9 @@ static DWORD WINAPI input_fix_thread(void *unused) {
     input_patch_exe_iat();
     for (int i = 0; i < 300; ++i) {
         input_try_subclass();
+        if (render_scale_is_active()) {
+            render_scale_patch_loaded_mods();
+        }
         Sleep(200);
     }
     return 0;
