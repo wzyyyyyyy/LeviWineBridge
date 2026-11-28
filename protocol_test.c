@@ -7,6 +7,8 @@ typedef uint64_t ULONGLONG;
 typedef int32_t LONG;
 typedef uint16_t USHORT;
 #define MOUSE_MOVE_ABSOLUTE 1
+#define LEVI_HEAP_GUARD_PURE_TEST
+#include "heap_guard.h"
 #define LEVI_INPUT_FIX_PURE_TEST
 #include "input_fix.h"
 #define LEVI_RENDER_SCALE_PURE_TEST
@@ -279,5 +281,15 @@ int main(void) {
     };
     assert(levi_find_d3d12_create_device_slot(d3d12_gptk4_stub, sizeof d3d12_gptk4_stub, &disp, &next_off) == 1);
     assert(disp == 0x35a8 && next_off == 25);
+
+    /* SuspendThread heap/loader guard target module matching. */
+    const wchar_t *gdir = L"Z:\\Users\\test\\Instances\\123\\";
+    size_t gdir_len = wcslen(gdir);
+    assert(levi_heap_guard_is_target_module(L"Z:\\Other\\PreLoader.dll", L"PreLoader.dll", gdir, gdir_len) == 1);
+    assert(levi_heap_guard_is_target_module(L"Z:\\Users\\test\\Instances\\123\\mods\\LeviLamina\\LeviLamina.dll", L"LeviLamina.dll", gdir, gdir_len) == 1);
+    assert(levi_heap_guard_is_target_module(L"Z:\\Users\\test\\Instances\\123\\mods\\LeviOptimize\\LeviOptimize.dll", L"LeviOptimize.dll", gdir, gdir_len) == 1);
+    assert(levi_heap_guard_is_target_module(L"Z:\\Users\\test\\Instances\\123\\mods\\LeviClient\\LeviWineBridge.dll", L"LeviWineBridge.dll", gdir, gdir_len) == 0);
+    assert(levi_heap_guard_is_target_module(L"Z:\\Users\\test\\Instances\\123\\Minecraft.Windows.exe", L"Minecraft.Windows.exe", gdir, gdir_len) == 0);
+    assert(levi_heap_guard_is_target_module(L"C:\\windows\\system32\\kernel32.dll", L"kernel32.dll", gdir, gdir_len) == 0);
     return 0;
 }
